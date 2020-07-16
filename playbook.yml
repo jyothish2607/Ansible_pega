@@ -1,0 +1,99 @@
+---
+ - name: Playbook for installing Java, tomcat and postgresql
+   hosts: web
+   become: True
+   become_method: sudo
+   vars:
+    java_file: files/jdk-8u251-linux-x64.tar.gz
+    java_download_path: /tmp/jdk-8u251-linux-x64.tar.gz
+    java_archive_path: /opt
+    java_path: /opt/jdk1.8.0_251
+    java_env_file: /etc/profile.d/java.sh
+    os_env_file: /etc/profile
+    tomcat_download_url: http://apachemirror.wuchna.com/tomcat/tomcat-9/v9.0.37/bin/apache-tomcat-9.0.37.tar.gz
+    tomcat_download_path: /tmp/apache-tomcat-9.0.37.tar.gz
+    tomcat_archive_path: /opt
+    tomcat_path: /opt/apache-tomcat-9.0.37
+    apt_source_file: /etc/apt/sources.list.d/pgdg.list
+    apt_key_postgres: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    postgres_repo: deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main
+
+   tasks:
+    - name: Copy java tar file to remote node
+      copy:
+       src: "{{ java_file }}"
+       dest: "{{ java_download_path }}"
+
+    - name: Unpacks java tar file
+      unarchive:
+       src: "{{ java_download_path }}"
+       dest: "{{ java_archive_path }}"
+       remote_src: yes
+       owner: root
+       group: root
+   
+    - name: Make Java available for system
+      command: 'update-alternatives --install "/usr/bin/java" "java" "{{ java_path }}/bin/java" 2000'
+
+    - name: Set/Configure JAVA_HOME in environment variables 
+      shell: "echo 'export JAVA_HOME={{ java_path }}\nexport PATH=$JAVA_HOME/bin:$PATH' > {{ java_env_file }}"
+
+    - name: Exports/Run OS env file for make JAVA_HOME available globally
+      shell: ". {{ os_env_file }}"
+ 
+    - name: Download the tomcat tarball
+      get_url: 
+       url: "{{ tomcat_download_url }}"
+       dest: "{{ tomcat_download_path }}"
+
+    - name: Create tomcat user
+      user:
+       name: tomcat
+       group: tomcat
+       state: present 
+
+    - name: Uncompress the tomcat tarball to {{ tomcat_archive_path }}
+      unarchive:
+       src: "{{ tomcat_download_path }}"
+       dest: "{{ tomcat_archive_path }}"
+       remote_src: yes
+       owner: tomcat
+       group: tomcat
+
+    - name: Fix ownership for tomcat folder
+      file:
+       path: "{{ tomcat_path }}"
+       state: directory
+       owner: tomcat
+       group: tomcat
+       recurse: yes
+    
+    - name: Check if tomcat is running
+      shell: "ps -ef | grep tomcat | grep -v grep"
+      ignore_errors: yes
+      changed_when: false
+      failed_when: False
+      register: apache_status
+
+    - name: Start tomcat service
+      command: "nohup sh {{ tomcat_path }}/bin/startup.sh"
+      when: apache_status.rc != 0
+
+    - name: Create the postgresql repository
+      shell: sh -c 'echo "{{ postgres_repo }}" > {{ apt_source_file }}'
+
+    - name: Import the repository signing key
+      apt_key:
+       url: "{{ apt_key_postgres }}"
+       state: present
+
+    - name: Update and Install postgresql
+      apt: 
+        name: "{{ item }}"
+        update_cache: yes 
+        cache_valid_time: 3600
+      with_items:
+       - postgresql-9.5
+       - postgresql-9.5-pljava
+
+   

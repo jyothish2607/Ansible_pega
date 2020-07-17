@@ -49,8 +49,8 @@
     - name: Create tomcat user
       user:
        name: tomcat
-       group: tomcat
-       state: present 
+       state: present
+       
 
     - name: Uncompress the tomcat tarball to {{ tomcat_archive_path }}
       unarchive:
@@ -87,11 +87,14 @@
        url: "{{ apt_key_postgres }}"
        state: present
 
-    - name: Update and Install postgresql
+    - name: Update apt-get repo and cache
+      apt: 
+       update_cache: yes
+       force_apt_get: yes
+
+    - name: Install postgresql
       apt: 
         name: "{{ item }}"
-        update_cache: yes 
-        cache_valid_time: 3600
       with_items:
        - postgresql-9.5
        - postgresql-9.5-pljava
